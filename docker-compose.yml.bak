@@ -1,0 +1,96 @@
+version: '3.8'
+
+services:
+  openclaw:
+    image: ghcr.io/openclaw/openclaw:latest
+    container_name: openclaw
+    restart: unless-stopped
+    ports:
+      - "18789:18789"
+      - "3000:3000"
+    volumes:
+      - /mnt/e/OpenClaw_Genesis/config:/app/config
+      - /mnt/e/OpenClaw_Genesis/plugins:/app/plugins
+      - /mnt/f/OpenClaw_Memory/logs:/app/logs
+    environment:
+      - NODE_ENV=production
+      - OPENCLAW_MODE=local
+      - TZ=Asia/Shanghai
+      - OPENCLAW_GATEWAY_BIND=lan
+    depends_on:
+      ollama:
+        condition: service_healthy
+    networks:
+      - neuro-net
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    restart: unless-stopped
+    volumes:
+      - /mnt/f/OpenClaw_Memory/models/ollama:/root/.ollama
+    ports:
+      - "11434:11434"
+    deploy:
+      resources:
+        limits:
+          memory: 24G
+    networks:
+      - neuro-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+
+  emotion-engine:
+    build: /mnt/e/OpenClaw_Genesis/services/emotion
+    container_name: emotion-engine
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    volumes:
+      - /mnt/f/OpenClaw_Memory/models/bert:/root/.cache/huggingface
+    environment:
+      - VISUAL_URL=http://visual-server:8080
+    networks:
+      - neuro-net
+
+  visual-server:
+    image: node:22-bookworm
+    container_name: visual-server
+    working_dir: /app
+    command: sh -c "npm install && npm run dev"
+    volumes:
+      - /mnt/e/OpenClaw_Genesis/services/visual-server:/app
+    ports:
+      - "8088:8080"
+    networks:
+      - neuro-net
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    restart: unless-stopped
+    volumes:
+      - /mnt/e/OpenClaw_Genesis/config/prometheus.yml:/etc/prometheus/prometheus.yml
+      - /mnt/f/OpenClaw_Memory/data/prometheus:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - neuro-net
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    restart: unless-stopped
+    volumes:
+      - /mnt/f/OpenClaw_Memory/data/grafana:/var/lib/grafana
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    networks:
+      - neuro-net
+
+networks:
+  neuro-net:
+    driver: bridge

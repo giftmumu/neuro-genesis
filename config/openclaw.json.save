@@ -1,0 +1,22 @@
+c{
+  "gateway": { "port": 18789, "bind": "0.0.0.0" },
+  "plugins": {
+    "enabled": true,
+    "hooks": {
+      "before_llm_generate": "http://emotion-engine:8001/analyze"
+    }
+  },
+  "models": {
+    "default_provider": "ollama",
+    "providers": {
+      "ollama": {
+        "baseUrl": "http://ollama:11434",
+        "models": [{ "id": "qwen:7b-chat-q4_0", "name": "Qwen 7B" }]
+      }
+    }
+  },
+  "memory": {
+    "provider": "mem9",
+    "mem9Url": "http://mem9:8080"
+  }
+}

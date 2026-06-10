@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+<head><title>NEURO-SAMA</title>
+<style>
+body { margin: 0; background: #000; color: #fff; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; }
+#status { font-size: 2rem; font-weight: bold; text-shadow: 0 0 20px cyan; }
+.happy { color: #ffd700; } .sad { color: #00bfff; } .thinking { color: #ff00ff; }
+</style>
+</head>
+<body>
+<h1 id="status">NEURO-SAMA <span style="font-size:1rem">INITIALIZING...</span></h1>
+<script>
+const ws = new WebSocket('ws://' + window.location.host);
+const el = document.getElementById('status');
+ws.onmessage = (e) => {
+  const msg = JSON.parse(e.data);
+  if (msg.type === 'EMOTION_UPDATE') {
+    el.className = msg.state;
+    el.innerText = msg.state.toUpperCase();
+  }
+};
+</script>
+</body>
+</html>

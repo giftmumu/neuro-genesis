@@ -1,0 +1,25 @@
+{
+  "gateway": { "port": 18789, "bind": "lan" },
+  "plugins": {
+    "enabled": true,
+    "hooks": {
+      "before_llm_generate": "http://emotion-engine:8001/analyze"
+    }
+  },
+  "models": {
+    "default_provider": "minimax",
+    "providers": {
+      "minimax": {
+        "baseUrl": "https://api.minimax.io/anthropic",
+        "apiKey": "${MINIMAX_API_KEY}",
+        "api": "anthropic-messages",
+        "models": [
+          { "id": "MiniMax-M27", "name": "MiniMax M2.7" }
+        ]
+      }
+    }
+  },
+  "memory": {
+    "provider": "in_memory"
+  }
+}
