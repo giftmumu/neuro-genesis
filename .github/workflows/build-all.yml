@@ -1,4 +1,4 @@
-name: NEURO-GENESIS Official Build
+name: NEURO-GENESIS Production Build
 
 on:
   workflow_dispatch:
@@ -7,35 +7,34 @@ on:
         description: '镜像版本标签'
         required: false
         default: 'stable'
-      build_platform:
-        description: '构建平台'
-        required: false
-        default: 'linux/amd64'
   push:
     branches: [ main ]
 
-# 修复 Node.js 警告
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 permissions:
-  contents: write
+  contents: read
   packages: write
 
 jobs:
-  build-and-release:
+  build-and-push:
     runs-on: ubuntu-latest
     steps:
+      # ========== 0. 磁盘空间释放 (防止 No space left on device) ==========
+      - name: Free Disk Space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+
       - name: Checkout repo
         uses: actions/checkout@v4
 
       - name: Set version tag
-        run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
-            echo "VERSION_TAG=stable" >> $GITHUB_ENV
-          else
-            echo "VERSION_TAG=${{ github.event.inputs.version }}" >> $GITHUB_ENV
-          fi
+        run: echo "VERSION_TAG=${{ github.event.inputs.version || 'stable' }}" >> $GITHUB_ENV
 
       - name: Login to GHCR
         uses: docker/login-action@v3
@@ -44,40 +43,29 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-      
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # ========== 1. emotion-engine ==========
+      # ========== 1. 构建 Emotion Engine ==========
       - name: Build & push emotion-engine
         uses: docker/build-push-action@v5
         with:
           context: ./services/emotion
           push: true
           tags: ghcr.io/${{ github.repository_owner }}/emotion-engine:${{ env.VERSION_TAG }}
-          platforms: ${{ github.event.inputs.build_platform }}
           cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/build-cache:emotion-engine
           cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/build-cache:emotion-engine,mode=max
 
-      # ========== 2. openclaw (使用 main 分支 + 自动修补) ==========
+      # ========== 2. 构建 OpenClaw ==========
       - name: Checkout OpenClaw source
         uses: actions/checkout@v4
         with:
           repository: openclaw/openclaw
           path: openclaw-src
-          # 【修复】改回 main 分支，确保 Git 检出成功
           ref: main
 
       - name: Patch OpenClaw Dockerfile
-        run: |
-          echo ">>> 正在修补 Dockerfile..."
-          sed -i 's/--config.offline=true//g' openclaw-src/Dockerfile
-          if grep -q "config.offline" openclaw-src/Dockerfile; then
-            echo "❌ 补丁失败"; exit 1
-          fi
-          echo "✅ 补丁成功"
+        run: sed -i 's/--config.offline=true//g' openclaw-src/Dockerfile
 
       - name: Build & push OpenClaw
         uses: docker/build-push-action@v5
@@ -86,16 +74,12 @@ jobs:
           push: true
           tags: ghcr.io/${{ github.repository_owner }}/openclaw:${{ env.VERSION_TAG }}
           build-args: NODE_OPTIONS=--max_old_space_size=4096
-          platforms: ${{ github.event.inputs.build_platform }}
           cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/build-cache:openclaw
           cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/build-cache:openclaw,mode=max
 
-      # ========== 3. 基础镜像中转 ==========
-      - name: Transfer base images & Generate list
+      # ========== 3. 基础镜像无损中转 (零磁盘占用) ==========
+      - name: Sync base images (manifest copy)
         run: |
-          echo "ghcr.io/${{ github.repository_owner }}/openclaw:${{ env.VERSION_TAG }}" > image-list.txt
-          echo "ghcr.io/${{ github.repository_owner }}/emotion-engine:${{ env.VERSION_TAG }}" >> image-list.txt
-          
           images=(
             "node:22-bookworm"
             "python:3.11-slim"
@@ -103,36 +87,29 @@ jobs:
             "prom/prometheus:latest"
             "grafana/grafana:latest"
           )
-          
           for img in "${images[@]}"; do
-            for i in {1..3}; do docker pull "$img" && break || sleep 10; done
             safe_name=$(echo "$img" | sed 's/\//-/g;s/:/--/g')
-            new_tag="ghcr.io/${{ github.repository_owner }}/$safe_name"
-            docker tag "$img" "$new_tag"
-            for i in {1..3}; do docker push "$new_tag" && break || sleep 10; done
-            echo "$new_tag" >> image-list.txt
+            target="ghcr.io/${{ github.repository_owner }}/$safe_name"
+            echo "Syncing $img -> $target (No disk usage)"
+            docker buildx imagetools create --tag "$target" "$img"
           done
 
-      # ========== 4. 导出离线包 ==========
-      - name: Verify and Pull all images
-        run: while read img; do docker pull "$img"; done < image-list.txt
-
-      - name: Export offline package & MD5
+      # ========== 4. 自动权限治理 ==========
+      - name: Set packages visibility to Public
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          IMAGE_STRING=$(cat image-list.txt | tr '\n' ' ')
-          docker save $IMAGE_STRING -o neuro-genesis-full.tar
-          gzip neuro-genesis-full.tar
-          md5sum neuro-genesis-full.tar.gz > neuro-genesis-full.tar.gz.md5
-          gzip -t neuro-genesis-full.tar.gz && echo "✅ 校验通过"
-
-      - name: Upload Release
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: ${{ env.VERSION_TAG }}-${{ github.sha }}
-          name: "NEURO-GENESIS ${{ env.VERSION_TAG }}"
-          files: |
-            neuro-genesis-full.tar.gz
-            neuro-genesis-full.tar.gz.md5
-
-      - name: Cleanup
-        run: rm -rf image-list.txt neuro-genesis-full.tar.gz*
+          packages=(
+            "emotion-engine" "openclaw" 
+            "node--22--bookworm" "python-3.11--slim" 
+            "ollama-ollama--latest" "prom-prometheus--latest" 
+            "grafana-grafana--latest"
+          )
+          for pkg in "${packages[@]}"; do
+            echo "Setting $pkg to public..."
+            curl -s -X PATCH \
+              -H "Authorization: token $GH_TOKEN" \
+              -H "Accept: application/vnd.github.v3+json" \
+              https://api.github.com/user/packages/container/$pkg \
+              -d '{"visibility":"public"}' || echo "Warning: $pkg may not exist yet"
+          done
