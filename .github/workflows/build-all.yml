@@ -8,7 +8,7 @@ on:
         required: false
         default: 'stable'
       build_platform:
-        description: '构建平台'
+        description: '构建平台 (linux/amd64 或 linux/arm64)'
         required: false
         default: 'linux/amd64'
   push:
@@ -25,7 +25,6 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      # 1. 统一版本标签管理
       - name: Set version tag
         run: |
           if [ "${{ github.event_name }}" = "push" ]; then
@@ -41,25 +40,43 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # ========== 2. 构建核心镜像 ==========
+      # ========== 1. emotion-engine ==========
       - name: Build & push emotion-engine
         uses: docker/build-push-action@v5
         with:
           context: ./services/emotion
           push: true
           tags: ghcr.io/${{ github.repository_owner }}/emotion-engine:${{ env.VERSION_TAG }}
+          platforms: ${{ github.event.inputs.build_platform }}
           cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/build-cache:emotion-engine
           cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/build-cache:emotion-engine,mode=max
 
+      # ========== 2. openclaw (6.1 Stable + 健壮性修补) ==========
       - name: Checkout OpenClaw source
         uses: actions/checkout@v4
         with:
           repository: openclaw/openclaw
           path: openclaw-src
-          ref: main
+          ref: 6.1-stable
+
+      - name: Patch OpenClaw Dockerfile
+        run: |
+          echo ">>> 正在修补 Dockerfile 以解决离线构建风险..."
+          # 1. 移除强制离线限制
+          sed -i 's/--config.offline=true//g' openclaw-src/Dockerfile
+          
+          # 2. 【加固】验证修补是否成功，防止构建带着隐患运行
+          if grep -q "config.offline" openclaw-src/Dockerfile; then
+            echo "❌ 错误：Dockerfile 补丁应用失败，请检查源码格式！"
+            exit 1
+          fi
+          echo "✅ 补丁验证通过"
 
       - name: Build & push OpenClaw
         uses: docker/build-push-action@v5
@@ -68,17 +85,16 @@ jobs:
           push: true
           tags: ghcr.io/${{ github.repository_owner }}/openclaw:${{ env.VERSION_TAG }}
           build-args: NODE_OPTIONS=--max_old_space_size=4096
+          platforms: ${{ github.event.inputs.build_platform }}
           cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/build-cache:openclaw
           cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/build-cache:openclaw,mode=max
 
-      # ========== 3. 基础镜像中转 & 动态列表生成 ==========
+      # ========== 3. 基础镜像中转 (串行稳健模式) ==========
       - name: Transfer base images & Generate list
         run: |
-          # 初始化列表：写入核心镜像
           echo "ghcr.io/${{ github.repository_owner }}/openclaw:${{ env.VERSION_TAG }}" > image-list.txt
           echo "ghcr.io/${{ github.repository_owner }}/emotion-engine:${{ env.VERSION_TAG }}" >> image-list.txt
           
-          # 定义基础镜像数组
           images=(
             "node:22-bookworm"
             "python:3.11-slim"
@@ -87,58 +103,42 @@ jobs:
             "grafana/grafana:latest"
           )
           
-          # 循环处理
           for img in "${images[@]}"; do
-            # 拉取 (网络弹性：三重试)
+            # 网络弹性重试机制
             for i in {1..3}; do 
-              echo ">>> 尝试拉取 $img ($i/3)"
+              echo ">>> Pulling $img ($i/3)..."
               docker pull "$img" && break || sleep 10
             done
             
-            # 计算标准化名称 (消除手误：自动生成)
             safe_name=$(echo "$img" | sed 's/\//-/g;s/:/--/g')
             new_tag="ghcr.io/${{ github.repository_owner }}/$safe_name"
             
-            # 打标签并推送 (网络弹性：三重试)
             docker tag "$img" "$new_tag"
             for i in {1..3}; do 
-              echo ">>> 尝试推送 $new_tag ($i/3)"
+              echo ">>> Pushing $new_tag ($i/3)..."
               docker push "$new_tag" && break || sleep 10
             done
             
-            # 追加到列表
             echo "$new_tag" >> image-list.txt
           done
-          
-          echo ">>> 镜像列表生成完毕"
 
-      # ========== 4. 完整性保障：导出前强制校验 (新增关键步) ==========
+      # ========== 4. 导出离线包 (完整性闭环) ==========
       - name: Verify and Pull all images
         run: |
-          echo ">>> 正在校验并拉取所有镜像以确保完整性..."
-          # 逐行读取列表，强制拉取
+          echo ">>> 最终完整性校验：强制拉取所有镜像"
           while read img; do
-            echo "Pulling $img..."
             docker pull "$img"
           done < image-list.txt
-          echo "✅ 所有镜像本地校验通过"
 
-      # ========== 5. 导出离线包 ==========
       - name: Export offline package & MD5
         run: |
-          # 动态读取列表 (自动适应扩展)
           IMAGE_STRING=$(cat image-list.txt | tr '\n' ' ')
-          
-          echo ">>> 正在打包镜像: $IMAGE_STRING"
-          # 执行打包
+          echo ">>> 打包镜像列表: $IMAGE_STRING"
           docker save $IMAGE_STRING -o neuro-genesis-full.tar
-          
-          # 压缩与校验
           gzip neuro-genesis-full.tar
           md5sum neuro-genesis-full.tar.gz > neuro-genesis-full.tar.gz.md5
-          gzip -t neuro-genesis-full.tar.gz && echo "✅ 离线包完整性校验通过"
+          gzip -t neuro-genesis-full.tar.gz && echo "✅ 离线包校验通过"
 
-      # ========== 6. 发布 Release ==========
       - name: Upload Release
         uses: softprops/action-gh-release@v1
         with:
@@ -148,9 +148,5 @@ jobs:
             neuro-genesis-full.tar.gz
             neuro-genesis-full.tar.gz.md5
 
-      # ========== 7. 环境清理 (可选) ==========
-      - name: Cleanup artifacts
-        run: |
-          rm -f image-list.txt
-          rm -f neuro-genesis-full.tar.gz neuro-genesis-full.tar.gz.md5
-          echo "清理完成"
+      - name: Cleanup
+        run: rm -rf image-list.txt neuro-genesis-full.tar.gz*
