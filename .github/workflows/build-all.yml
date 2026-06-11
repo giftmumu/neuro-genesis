@@ -32,14 +32,9 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set up Docker Buildx with cache & concurrency limit
+      # 【关键修复】移除 v3 不支持的参数，保留默认配置即可
+      - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-        with:
-          driver-opts: |
-            max-parallel-builds=2
-            memory=6g
-          cache-provider: registry
-          cache-registry: ghcr.io/${{ github.repository_owner }}/build-cache
 
       # ========== 1. emotion-engine ==========
       - name: Build & push emotion-engine
