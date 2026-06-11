@@ -4,11 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: '镜像版本标签 (stable / dev / 6.2-stable)'
+        description: '镜像版本标签'
         required: false
         default: 'stable'
       build_platform:
-        description: '构建平台 (linux/amd64)'
+        description: '构建平台'
         required: false
         default: 'linux/amd64'
   push:
@@ -21,19 +21,17 @@ permissions:
 jobs:
   build-and-release:
     runs-on: ubuntu-latest
-    outputs:
-      version_tag: ${{ steps.vars.outputs.version_tag }}
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
 
+      # 1. 统一版本标签管理
       - name: Set version tag
-        id: vars
         run: |
           if [ "${{ github.event_name }}" = "push" ]; then
-            echo "version_tag=stable" >> $GITHUB_OUTPUT
+            echo "VERSION_TAG=stable" >> $GITHUB_ENV
           else
-            echo "version_tag=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+            echo "VERSION_TAG=${{ github.event.inputs.version }}" >> $GITHUB_ENV
           fi
 
       - name: Login to GHCR
@@ -46,18 +44,16 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # emotion-engine
+      # ========== 2. 构建核心镜像 ==========
       - name: Build & push emotion-engine
         uses: docker/build-push-action@v5
         with:
           context: ./services/emotion
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/emotion-engine:${{ steps.vars.outputs.version_tag }}
-          platforms: ${{ github.event.inputs.build_platform || 'linux/amd64' }}
+          tags: ghcr.io/${{ github.repository_owner }}/emotion-engine:${{ env.VERSION_TAG }}
           cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/build-cache:emotion-engine
           cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/build-cache:emotion-engine,mode=max
 
-      # openclaw
       - name: Checkout OpenClaw source
         uses: actions/checkout@v4
         with:
@@ -70,15 +66,19 @@ jobs:
         with:
           context: ./openclaw-src
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/openclaw:${{ steps.vars.outputs.version_tag }}
+          tags: ghcr.io/${{ github.repository_owner }}/openclaw:${{ env.VERSION_TAG }}
           build-args: NODE_OPTIONS=--max_old_space_size=4096
-          platforms: ${{ github.event.inputs.build_platform || 'linux/amd64' }}
           cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/build-cache:openclaw
           cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/build-cache:openclaw,mode=max
 
-      # base images
-      - name: Pull, retag & push base images
+      # ========== 3. 基础镜像中转 & 动态列表生成 ==========
+      - name: Transfer base images & Generate list
         run: |
+          # 初始化列表：写入核心镜像
+          echo "ghcr.io/${{ github.repository_owner }}/openclaw:${{ env.VERSION_TAG }}" > image-list.txt
+          echo "ghcr.io/${{ github.repository_owner }}/emotion-engine:${{ env.VERSION_TAG }}" >> image-list.txt
+          
+          # 定义基础镜像数组
           images=(
             "node:22-bookworm"
             "python:3.11-slim"
@@ -86,45 +86,71 @@ jobs:
             "prom/prometheus:latest"
             "grafana/grafana:latest"
           )
+          
+          # 循环处理
           for img in "${images[@]}"; do
-            docker pull "$img"
+            # 拉取 (网络弹性：三重试)
+            for i in {1..3}; do 
+              echo ">>> 尝试拉取 $img ($i/3)"
+              docker pull "$img" && break || sleep 10
+            done
+            
+            # 计算标准化名称 (消除手误：自动生成)
             safe_name=$(echo "$img" | sed 's/\//-/g;s/:/--/g')
             new_tag="ghcr.io/${{ github.repository_owner }}/$safe_name"
+            
+            # 打标签并推送 (网络弹性：三重试)
             docker tag "$img" "$new_tag"
-            docker push "$new_tag"
+            for i in {1..3}; do 
+              echo ">>> 尝试推送 $new_tag ($i/3)"
+              docker push "$new_tag" && break || sleep 10
+            done
+            
+            # 追加到列表
+            echo "$new_tag" >> image-list.txt
           done
+          
+          echo ">>> 镜像列表生成完毕"
 
-      # verify
-      - name: Verify core images
+      # ========== 4. 完整性保障：导出前强制校验 (新增关键步) ==========
+      - name: Verify and Pull all images
         run: |
-          TAG="${{ steps.vars.outputs.version_tag }}"
-          docker pull ghcr.io/${{ github.repository_owner }}/openclaw:$TAG
-          docker pull ghcr.io/${{ github.repository_owner }}/emotion-engine:$TAG
-          echo "✅ 核心镜像校验通过"
+          echo ">>> 正在校验并拉取所有镜像以确保完整性..."
+          # 逐行读取列表，强制拉取
+          while read img; do
+            echo "Pulling $img..."
+            docker pull "$img"
+          done < image-list.txt
+          echo "✅ 所有镜像本地校验通过"
 
-      # export offline package
-      - name: Export all images & create MD5
+      # ========== 5. 导出离线包 ==========
+      - name: Export offline package & MD5
         run: |
-          TAG="${{ steps.vars.outputs.version_tag }}"
-          docker save \
-            ghcr.io/${{ github.repository_owner }}/openclaw:$TAG \
-            ghcr.io/${{ github.repository_owner }}/emotion-engine:$TAG \
-            ghcr.io/${{ github.repository_owner }}/ollama-ollama--latest \
-            ghcr.io/${{ github.repository_owner }}/node-22--bookworm \
-            ghcr.io/${{ github.repository_owner }}/prom-prometheus--latest \
-            ghcr.io/${{ github.repository_owner }}/grafana-grafana--latest \
-            -o neuro-genesis-full.tar
+          # 动态读取列表 (自动适应扩展)
+          IMAGE_STRING=$(cat image-list.txt | tr '\n' ' ')
+          
+          echo ">>> 正在打包镜像: $IMAGE_STRING"
+          # 执行打包
+          docker save $IMAGE_STRING -o neuro-genesis-full.tar
+          
+          # 压缩与校验
           gzip neuro-genesis-full.tar
           md5sum neuro-genesis-full.tar.gz > neuro-genesis-full.tar.gz.md5
           gzip -t neuro-genesis-full.tar.gz && echo "✅ 离线包完整性校验通过"
 
-      - name: Upload offline package & MD5 to Release
+      # ========== 6. 发布 Release ==========
+      - name: Upload Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ steps.vars.outputs.version_tag }}-${{ github.sha }}
-          name: "NEURO-GENESIS ${{ steps.vars.outputs.version_tag }} offline bundle"
+          tag_name: ${{ env.VERSION_TAG }}-${{ github.sha }}
+          name: "NEURO-GENESIS ${{ env.VERSION_TAG }}"
           files: |
             neuro-genesis-full.tar.gz
             neuro-genesis-full.tar.gz.md5
-          draft: false
-          prerelease: false
+
+      # ========== 7. 环境清理 (可选) ==========
+      - name: Cleanup artifacts
+        run: |
+          rm -f image-list.txt
+          rm -f neuro-genesis-full.tar.gz neuro-genesis-full.tar.gz.md5
+          echo "清理完成"
