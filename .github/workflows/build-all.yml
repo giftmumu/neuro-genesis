@@ -1,15 +1,15 @@
-name: NEURO-GENESIS Full Build
+name: NEURO-GENESIS Official Build
 
 on:
   workflow_dispatch:
     inputs:
       version:
         description: '镜像版本标签 (stable / dev / 6.2-stable)'
-        required: true
+        required: false
         default: 'stable'
       build_platform:
         description: '构建平台 (linux/amd64)'
-        required: true
+        required: false
         default: 'linux/amd64'
   push:
     branches: [ main ]
@@ -21,9 +21,20 @@ permissions:
 jobs:
   build-and-release:
     runs-on: ubuntu-latest
+    outputs:
+      version_tag: ${{ steps.vars.outputs.version_tag }}
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
+
+      - name: Set version tag
+        id: vars
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "version_tag=stable" >> $GITHUB_OUTPUT
+          else
+            echo "version_tag=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          fi
 
       - name: Login to GHCR
         uses: docker/login-action@v3
@@ -32,22 +43,21 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # 【关键修复】移除 v3 不支持的参数，保留默认配置即可
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # ========== 1. emotion-engine ==========
+      # emotion-engine
       - name: Build & push emotion-engine
         uses: docker/build-push-action@v5
         with:
           context: ./services/emotion
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/emotion-engine:${{ github.event.inputs.version }}
-          platforms: ${{ github.event.inputs.build_platform }}
+          tags: ghcr.io/${{ github.repository_owner }}/emotion-engine:${{ steps.vars.outputs.version_tag }}
+          platforms: ${{ github.event.inputs.build_platform || 'linux/amd64' }}
           cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/build-cache:emotion-engine
           cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/build-cache:emotion-engine,mode=max
 
-      # ========== 2. openclaw (官方源码) ==========
+      # openclaw
       - name: Checkout OpenClaw source
         uses: actions/checkout@v4
         with:
@@ -60,13 +70,13 @@ jobs:
         with:
           context: ./openclaw-src
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/openclaw:${{ github.event.inputs.version }}
+          tags: ghcr.io/${{ github.repository_owner }}/openclaw:${{ steps.vars.outputs.version_tag }}
           build-args: NODE_OPTIONS=--max_old_space_size=4096
-          platforms: ${{ github.event.inputs.build_platform }}
+          platforms: ${{ github.event.inputs.build_platform || 'linux/amd64' }}
           cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/build-cache:openclaw
           cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/build-cache:openclaw,mode=max
 
-      # ========== 3. 基础镜像中转（标准化命名） ==========
+      # base images
       - name: Pull, retag & push base images
         run: |
           images=(
@@ -84,21 +94,21 @@ jobs:
             docker push "$new_tag"
           done
 
-      # ========== 4. 镜像推送校验 ==========
+      # verify
       - name: Verify core images
         run: |
-          VERSION=${{ github.event.inputs.version }}
-          docker pull ghcr.io/${{ github.repository_owner }}/openclaw:$VERSION
-          docker pull ghcr.io/${{ github.repository_owner }}/emotion-engine:$VERSION
+          TAG="${{ steps.vars.outputs.version_tag }}"
+          docker pull ghcr.io/${{ github.repository_owner }}/openclaw:$TAG
+          docker pull ghcr.io/${{ github.repository_owner }}/emotion-engine:$TAG
           echo "✅ 核心镜像校验通过"
 
-      # ========== 5. 导出离线包 + 生成 MD5 ==========
+      # export offline package
       - name: Export all images & create MD5
         run: |
-          VERSION=${{ github.event.inputs.version }}
+          TAG="${{ steps.vars.outputs.version_tag }}"
           docker save \
-            ghcr.io/${{ github.repository_owner }}/openclaw:$VERSION \
-            ghcr.io/${{ github.repository_owner }}/emotion-engine:$VERSION \
+            ghcr.io/${{ github.repository_owner }}/openclaw:$TAG \
+            ghcr.io/${{ github.repository_owner }}/emotion-engine:$TAG \
             ghcr.io/${{ github.repository_owner }}/ollama-ollama--latest \
             ghcr.io/${{ github.repository_owner }}/node-22--bookworm \
             ghcr.io/${{ github.repository_owner }}/prom-prometheus--latest \
@@ -111,8 +121,8 @@ jobs:
       - name: Upload offline package & MD5 to Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ github.event.inputs.version }}-${{ github.sha }}
-          name: "NEURO-GENESIS ${{ github.event.inputs.version }} offline bundle"
+          tag_name: ${{ steps.vars.outputs.version_tag }}-${{ github.sha }}
+          name: "NEURO-GENESIS ${{ steps.vars.outputs.version_tag }} offline bundle"
           files: |
             neuro-genesis-full.tar.gz
             neuro-genesis-full.tar.gz.md5
