@@ -91,7 +91,7 @@ jobs:
             safe_name=$(echo "$img" | sed 's/\//-/g;s/:/--/g')
             target="ghcr.io/${{ github.repository_owner }}/$safe_name"
             echo "Syncing $img -> $target (No disk usage)"
-            docker buildx imagetools create --tag "$target" "$img"
+            docker buildx imagetools create --tag "$target:latest" "$img"
           done
 
       # ========== 4. 自动权限治理 ==========
