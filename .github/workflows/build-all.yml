@@ -18,7 +18,7 @@ jobs:
   build-and-push:
     runs-on: ubuntu-latest
     steps:
-      # ========== 0. 磁盘空间释放 (防止 No space left on device) ==========
+      # ========== 0. 清理磁盘 ==========
       - name: Free Disk Space
         uses: jlumbroso/free-disk-space@main
         with:
@@ -46,7 +46,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # ========== 1. 构建 Emotion Engine ==========
+      # ========== 1. emotion-engine ==========
       - name: Build & push emotion-engine
         uses: docker/build-push-action@v5
         with:
@@ -56,7 +56,7 @@ jobs:
           cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/build-cache:emotion-engine
           cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/build-cache:emotion-engine,mode=max
 
-      # ========== 2. 构建 OpenClaw ==========
+      # ========== 2. openclaw ==========
       - name: Checkout OpenClaw source
         uses: actions/checkout@v4
         with:
@@ -77,8 +77,8 @@ jobs:
           cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/build-cache:openclaw
           cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/build-cache:openclaw,mode=max
 
-      # ========== 3. 基础镜像无损中转 (零磁盘占用) ==========
-      - name: Sync base images (manifest copy)
+      # ========== 3. 基础镜像标准化中转 (核心修复) ==========
+      - name: Sync base images (Standardized Naming)
         run: |
           images=(
             "node:22-bookworm"
@@ -87,29 +87,25 @@ jobs:
             "prom/prometheus:latest"
             "grafana/grafana:latest"
           )
+          
           for img in "${images[@]}"; do
-            safe_name=$(echo "$img" | sed 's/\//-/g;s/:/--/g')
+            # 【关键算法】
+            # 规则：/ 替换为 - (单横杠)
+            # 规则：: 替换为 -- (双横杠)
+            # 结果：node:22-bookworm -> node--22-bookworm
+            safe_name=$(echo "$img" | sed 's/\//-/g; s/:/--/g')
+            
             target="ghcr.io/${{ github.repository_owner }}/$safe_name"
-            echo "Syncing $img -> $target (No disk usage)"
+            
+            echo ">>> 同步: $img -> $target:latest"
+            
+            # 无损同步并强制打 latest 标签
             docker buildx imagetools create --tag "$target:latest" "$img"
-          done
-
-      # ========== 4. 自动权限治理 ==========
-      - name: Set packages visibility to Public
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          packages=(
-            "emotion-engine" "openclaw" 
-            "node--22--bookworm" "python-3.11--slim" 
-            "ollama-ollama--latest" "prom-prometheus--latest" 
-            "grafana-grafana--latest"
-          )
-          for pkg in "${packages[@]}"; do
-            echo "Setting $pkg to public..."
+            
+            # 自动公开
             curl -s -X PATCH \
-              -H "Authorization: token $GH_TOKEN" \
+              -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
               -H "Accept: application/vnd.github.v3+json" \
-              https://api.github.com/user/packages/container/$pkg \
-              -d '{"visibility":"public"}' || echo "Warning: $pkg may not exist yet"
+              https://api.github.com/user/packages/container/$safe_name \
+              -d '{"visibility":"public"}' || true
           done
