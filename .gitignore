@@ -1,1 +1,44 @@
+# Secrets - real API keys never committed
 .env
+**/apiKey.txt
+**/secret*.txt
+
+# Runtime state (changes constantly, not configuration)
+config/state/
+config/agents/*/agent/
+
+# Runtime state (changes constantly, not configuration)
+config/state/
+config/agents/*/agent/
+
+# Logs
+logs/
+**/*.log
+
+# Session data (conversation transcripts, not configuration)
+config/agents/*/sessions/
+config/memory/*.sqlite
+
+# Backups (originals are committed, these are redundant)
+*.bak
+*.bak.*
+*.save
+*.clobbered*
+*.last-good
+* - 副本.yml
+
+# Temp files
+~$*
+~WRL*
+*.tmp
+
+# Large binaries (VS Code, installers) - download fresh on restore
+vscode/
+CC-Switch-v3.16.3/*.msi
+CC-Switch-v3.16.3/*.zip
+
+# OS files
+.DS_Store
+Thumbs.db
+
+_backup/
