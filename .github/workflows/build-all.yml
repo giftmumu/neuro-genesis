@@ -56,7 +56,17 @@ jobs:
           cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/build-cache:emotion-engine
           cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/build-cache:emotion-engine,mode=max
 
-      # ========== 2. openclaw ==========
+      # ========== 2. visual-server ==========
+      - name: Build & push visual-server
+        uses: docker/build-push-action@v5
+        with:
+          context: ./services/visual-server
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/visual-server:${{ env.VERSION_TAG }}
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/build-cache:visual-server
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/build-cache:visual-server,mode=max
+
+      # ========== 3. openclaw ==========
       - name: Checkout OpenClaw source
         uses: actions/checkout@v4
         with:
@@ -86,6 +96,7 @@ jobs:
             "ollama/ollama:latest"
             "prom/prometheus:latest"
             "grafana/grafana:latest"
+            "alpine:3.20"
           )
           
           for img in "${images[@]}"; do
