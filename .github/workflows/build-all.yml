@@ -48,7 +48,7 @@ jobs:
 
       # ========== 1. emotion-engine ==========
       - name: Build & push emotion-engine
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: ./services/emotion
           push: true
@@ -57,8 +57,30 @@ jobs:
           cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/build-cache:emotion-engine,mode=max
 
       # ========== 2. visual-server ==========
+      # 预检：确保 ghcr.io 包可写（避免手动推送造成的 403）
+      - name: Ensure ghcr.io package accessibility
+        run: |
+          PKG="visual-server"
+          echo ">>> 检查包 $PKG 是否存在..."
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/user/packages/container/$PKG" 2>/dev/null || echo "000")
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "包已存在，尝试设为公开..."
+            curl -s -X PATCH \
+              -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              -H "Accept: application/vnd.github.v3+json" \
+              "https://api.github.com/user/packages/container/$PKG" \
+              -d '{"visibility":"public"}' || true
+            echo "包可见性已更新"
+          elif [ "$HTTP_CODE" = "000" ]; then
+            echo "无法查询（网络或认证），继续构建..."
+          else
+            echo "包状态码=$HTTP_CODE，继续构建，将由 Actions 自动创建..."
+          fi
+
       - name: Build & push visual-server
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: ./services/visual-server
           push: true
@@ -78,7 +100,7 @@ jobs:
         run: sed -i 's/--config.offline=true//g' openclaw-src/Dockerfile
 
       - name: Build & push OpenClaw
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: ./openclaw-src
           push: true
@@ -87,7 +109,7 @@ jobs:
           cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/build-cache:openclaw
           cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/build-cache:openclaw,mode=max
 
-      # ========== 3. 基础镜像标准化中转 (核心修复) ==========
+      # ========== 4. 基础镜像标准化中转 (核心修复) ==========
       - name: Sync base images (Standardized Naming)
         run: |
           images=(
