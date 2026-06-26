@@ -184,12 +184,9 @@ services:
         condition: service_healthy
 
   visual-server:
-    image: ghcr.io/giftmumu/node--22-bookworm:latest
+    image: ghcr.io/giftmumu/visual-server:stable
     container_name: visual-server
-    working_dir: /app
-    command: sh -c "npm install && node server.js"
-    volumes:
-      - ./services/visual-server:/app
+    restart: unless-stopped
     ports:
       - "8088:8080"
     environment:
@@ -197,6 +194,9 @@ services:
     <<: *common-hosts
     networks:
       neuro-net: {}
+    depends_on:
+      network-guardian:
+        condition: service_healthy
     depends_on:
       network-guardian:
         condition: service_healthy
