@@ -1,0 +1,158 @@
+# =====================================================================
+# NEURO-GENESIS 全球单一事实源标准化协议 (v16.6.2 平台工程级)
+# 
+# 架构原则:
+#   YAML 极简抽象 — 声明式部署，代码即数据
+#   所有模型算力、密钥转译与 Obsidian 长期记忆均通过此抽象控制平面动态绑定
+#   两个 Guardian 脚本 (WSL bash + Windows ps1) 均从此文件派生事实
+#   Docker network-guardian (docker-compose) 内嵌硬编码同步此文件端口列表
+#
+# ═══════════════════════════════════════════════════════════════════
+#  架构全景 (经官方文档交叉核实 v2026-06)
+# ═══════════════════════════════════════════════════════════════════
+#
+#  ┌──────────────────────────────────────────────────────────────┐
+#  │  Claude Code (Anthropic SDK)                                │
+#  │  发送: Anthropic Messages 格式  POST /v1/messages            │
+#  │  读取: ANTHROPIC_BASE_URL + ANTHROPIC_API_KEY (环境变量)     │
+#  └──────────────┬───────────────────────────────────────────────┘
+#                 │ http://127.0.0.1:15721/v1/messages
+#                 ▼
+#  ┌──────────────────────────────────────────────────────────────┐
+#  │  CC-Switch v3.16.3 (本地路由 + 协议翻译网关)                 │
+#  │  端口: 0.0.0.0:15721 (--bind 0.0.0.0 --port 15721)          │
+#  │                                                              │
+#  │  入站协议:  Anthropic Messages  (/v1/messages)               │
+#  │  出站协议:  OpenAI Chat Completions  (/v1/chat/completions)   │
+#  │                                                              │
+#  │  核心能力 (经 GitHub README 核实):                            │
+#  │    - 本地代理 + 热切换 (Format conversion)                    │
+#  │    - 自动故障转移 (Auto-failover)                             │
+#  │    - 熔断器 (Circuit breaker)                                 │
+#  │    - 供应商健康监控 (Provider health monitoring)               │
+#  │    - 请求矫正器 (Request rectifier)                           │
+#  │    - 应用级接管 (App-level takeover per provider)             │
+#  │                                                              │
+#  │  已知限制 (经 GitHub + 文档核实):                             │
+#  │    - 不实现 /v1/models 端点 (仅 /v1/messages + /v1/chat/comp) │
+#  │    - 404 = 正常行为，不代表服务故障                            │
+#  │                                                              │
+#  │  供应商路由 (按 Provider Card 配置):                          │
+#  │    ┌─ DeepSeek 卡 → https://api.deepseek.com/v1/chat/comp... │
+#  │    │                 (国内直连，API Key 由 CC-Switch 注入)     │
+#  │    ├─ Claude 卡  → https://api.anthropic.com/v1/messages     │
+#  │    │                 (需全局出站代理 http://127.0.0.1:7890)   │
+#  │    └─ 其他卡     → 按 CC-Switch UI 配置的路由规则转发          │
+#  │                                                              │
+#  │  ⚠️ CC-Switch 不是 HTTP outbound proxy！                      │
+#  │     它不代理任意 HTTP 流量，只做 AI API 协议翻译 + 路由        │
+#  └──────────────┬───────────────────────────────────────────────┘
+#                 │ 按供应商卡片路由
+#        ┌────────┼────────────────┐
+#        ▼                         ▼
+#  ┌───────────┐           ┌──────────────┐
+#  │ DeepSeek  │           │   Claude     │
+#  │ API (v4)  │           │   API        │
+#  │ 国内直连  │           │  经 Clash    │
+#  │           │           │  7890 出海   │
+#  └───────────┘           └──────────────┘
+#
+#  ── Docker/OpenClaw 侧 (network-guardian 管控) ──
+#  OpenClaw Gateway
+#    → OPENCLAW_LLM_ENDPOINT=https://anthropic.com (业务代码不知道任何代理)
+#    → Privoxy (docker.internal:80) 透明劫持
+#    → host.docker.internal:TARGET_PORT (由 network-guardian 动态发现)
+#    → 如果 TARGET_PORT=15721: CC-Switch 协议翻译后路由到后端
+#    → 如果 TARGET_PORT=7890: Clash 直接出海到真正的 https://anthropic.com
+#
+#  ── 生态角色 ──
+#  DeepSeek API:     兼容 OpenAI Chat Completions 格式
+#                     (base_url: https://api.deepseek.com)
+#                     支持 Anthropic API 格式 (base_url: https://api.deepseek.com/anthropic)
+#  CC-Switch:        本地路由网关，Anthropic↔OpenAI 协议翻译
+#  Claude Code:      Anthropic 官方 AI 编程助手，读 ANTHROPIC_BASE_URL
+#  OpenClaw:         自托管多通道 AI Agent 网关 (Discord/Slack/Telegram/...)
+# ═══════════════════════════════════════════════════════════════════
+#
+# 增量变更日志:
+#   v16.0 → v16.6:
+#     [FIX]  startup_args 移除 --proxy-port (冗余参数，部分版本报错)
+#     [NEW]  no_proxy_extra: 用户自定义代理排除域
+#     [NEW]  proxy_env_inject: 控制是否注入 HTTP_PROXY (Windows 侧)
+#   v16.6 → v16.6.1:
+#     [DOC]  upstream_endpoint 补充 Privoxy 透明劫持链路完整说明
+#   v16.6.1 → v16.6.2:
+#     [DOC]  upstream_endpoint 标注"声明性字段"消除歧义
+#     [DOC]  全面重写架构全景注释，经 DeepSeek/CC-Switch/Claude/OpenClaw
+#            四大官方文档交叉核实
+#     [ARCH] 明确 CC-Switch 不实现 /v1/models (仅 /v1/messages + /v1/chat/completions)
+#     [ARCH] 明确 DeepSeek API 双协议兼容 (OpenAI + Anthropic)
+#
+# 严格向后兼容: v16.0 全部字段与嵌套结构零修改，仅追加新字段/注释
+# =====================================================================
+
+infra_network:
+  # 四层 TCP 动态发现矩阵：按优先级自动咬合，实现算力热插拔
+  # ⚠️ docker-compose-v9.2.yml network-guardian 的端口列表必须与此同步
+  probe_ports:
+    - 15721   # CC-Switch 本地路由兼 API 协议翻译网关（第一优先级）
+    - 4386    # CC-Switch 备用灰度端口
+    - 7890    # Clash 核心混合代理端口（直连出海通道，无协议翻译）
+    - 10809   # Clash 备用入站隧道
+    - 7893    # 特种异构加密网关
+    - 2334    # 本地局域网算力漏斗
+  timeout_seconds: 2
+
+  # v16.6 新增: NO_PROXY 扩展排除域
+  # 逗号分隔，追加到内置排除列表 (localhost/127.0.0.1/Docker 内网) 之后
+  # 示例: "api.internal.corp,10.50.0.0/16,metrics.local"
+  # 留空表示仅使用内置排除列表
+  no_proxy_extra: ""
+
+  # v16.6 新增: 是否注入 HTTP_PROXY/HTTPS_PROXY 系统环境变量
+  # true  = 注入全部 (HTTP_PROXY + NO_PROXY + ANTHROPIC_*) — 适用于 CLI 工具需要代理的场景
+  # false = 仅注入 Claude Code 专用变量 (ANTHROPIC_BASE_URL + ANTHROPIC_API_KEY)
+  #        — 适用于 CC-Switch 已开启"本地路由"透明拦截的场景，避免与系统代理冲突
+  # 注意: Claude Code 不读 HTTP_PROXY，它只读 ANTHROPIC_BASE_URL + ANTHROPIC_API_KEY
+  proxy_env_inject: true
+
+  # 防御性容灾死穴修正：必须开启优雅降级！
+  # 当算力中转站与外网节点集体因波动熄灭时，退守回本地 100% 安全的直连防护线，
+  # 存量业务（Ollama 内部回环）绝不内讧坍塌
+  allow_direct_fallback: true
+
+ai_agent_auth:
+  # 零侵入安全沙箱：仅提供已登录状态的全局 Facts 用户指纹，免除官方网页验证码
+  user_email: "tutu@neuro-genesis.local"
+  session_status: "authorized"
+  has_completed_onboarding: true
+
+claude_code:
+  # 最高级别内流专线灰度参数：跳过一切硅谷前置区域自检
+  bypass_region: true
+  telemetry_enabled: false
+  # 极致美学：写死官方正统 HTTPS。
+  # 业务代码纯净解耦：Claude Code 以为自己直连 https://anthropic.com
+  #
+  # 声明性字段 — 供人工审计与文档溯源使用，不被任何脚本自动读取。
+  # 实际路由完全由 guardian 脚本根据 probe_ports 活性动态决定。
+  upstream_endpoint: "https://anthropic.com"
+
+cc_switch:
+  # 便携版绿色免安装版物理盘符路径（Windows 绝对寻址）
+  windows_bin: "E:\\OpenClaw_Genesis\\CC-Switch-v3.16.3\\CC-Switch-v3.16.3-Windows-Portable\\cc-switch.exe"
+
+  # v16.6 FIX: 移除 --proxy-port 15721
+  # --port 已声明监听端口；--proxy-port 与 --port 指向同一端口时冗余，
+  # 且部分 CC-Switch 版本不识别 --proxy-port 参数会导致启动失败
+  # --bind 0.0.0.0: 刺透虚拟网卡墙，允许 WSL2 与 Docker 跨网访问
+  startup_args: "--bind 0.0.0.0 --port 15721"
+
+  # 守护进程防御性编程：开启幂等异步控制，崩溃秒级原地复活
+  daemon_enabled: true
+  retry_backoff_seconds: 3
+
+paths:
+  log_root: "E:\\OpenClaw_Genesis\\logs"
+  # 挂载你的长期记忆冷库路径（单一事实源）
+  obsidian_vault: "E:\\My_AI_Vault"

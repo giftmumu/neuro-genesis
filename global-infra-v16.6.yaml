@@ -1,0 +1,76 @@
+# =====================================================================
+# NEURO-GENESIS 全球单一事实源标准化协议 (v16.6 平台工程级)
+# 
+# 架构原则:
+#   YAML 极简抽象 — 声明式部署，代码即数据
+#   所有模型算力、密钥转译与 Obsidian 长期记忆均通过此抽象控制平面动态绑定
+#   两个 Guardian 脚本 (WSL bash + Windows ps1) 均从此文件派生事实
+#
+# v16.6 增量 (相对 v16.0):
+#   [FIX]  startup_args 移除 --proxy-port (冗余参数，部分版本报错)
+#   [NEW]  no_proxy_extra: 用户自定义代理排除域
+#   [NEW]  proxy_env_inject: 控制是否注入 HTTP_PROXY (Windows 侧)
+#
+# 严格向后兼容: v16.0 全部字段与嵌套结构零修改，仅追加新字段
+# =====================================================================
+
+infra_network:
+  # 四层 TCP 动态发现矩阵：按优先级自动咬合，实现算力热插拔
+  probe_ports:
+    - 15721   # CC-Switch 本地路由兼 API 逆向代理转发隧道总闸门（第一优先级）
+    - 4386    # CC-Switch 备用灰度端口
+    - 7890    # Clash 核心混合代理端口（第二优先级，具备网络破墙翻墙第一动力）
+    - 10809   # Clash 备用入站隧道
+    - 7893    # 特种异构加密网关
+    - 2334    # 本地局域网算力漏斗
+  timeout_seconds: 2
+
+  # v16.6 新增: NO_PROXY 扩展排除域
+  # 逗号分隔，追加到内置排除列表 (localhost/127.0.0.1/Docker 内网) 之后
+  # 示例: "api.internal.corp,10.50.0.0/16,metrics.local"
+  # 留空表示仅使用内置排除列表
+  no_proxy_extra: ""
+
+  # v16.6 新增: 是否注入 HTTP_PROXY/HTTPS_PROXY 系统环境变量
+  # true  = 注入全部 (HTTP_PROXY + NO_PROXY + ANTHROPIC_*) — 适用于 CLI 工具需要代理的场景
+  # false = 仅注入 Claude Code 专用变量 (ANTHROPIC_BASE_URL + ANTHROPIC_API_KEY)
+  #        — 适用于 CC-Switch 已开启"本地路由"透明拦截的场景，避免与系统代理冲突
+  proxy_env_inject: true
+
+  # 防御性容灾死穴修正：必须开启优雅降级！
+  # 当算力中转站与外网节点集体因波动熄灭时，退守回本地 100% 安全的直连防护线，
+  # 存量业务（Ollama 内部回环）绝不内讧坍塌
+  allow_direct_fallback: true
+
+ai_agent_auth:
+  # 零侵入安全沙箱：仅提供已登录状态的全局 Facts 用户指纹，免除官方网页验证码
+  user_email: "tutu@neuro-genesis.local"
+  session_status: "authorized"
+  has_completed_onboarding: true
+
+claude_code:
+  # 最高级别内流专线灰度参数：跳过一切硅谷前置区域自检
+  bypass_region: true
+  telemetry_enabled: false
+  # 极致美学：写死官方正统 HTTPS。
+  # 业务代码纯净解耦，由 network-guardian 在暗处执行网络透明劫持
+  upstream_endpoint: "https://anthropic.com"
+
+cc_switch:
+  # 便携版绿色免安装版物理盘符路径（Windows 绝对寻址）
+  windows_bin: "E:\\OpenClaw_Genesis\\CC-Switch-v3.16.3\\CC-Switch-v3.16.3-Windows-Portable\\cc-switch.exe"
+
+  # v16.6 FIX: 移除 --proxy-port 15721
+  # --port 已声明监听端口；--proxy-port 与 --port 指向同一端口时冗余，
+  # 且部分 CC-Switch 版本不识别 --proxy-port 参数会导致启动失败
+  # --bind 0.0.0.0: 刺透虚拟网卡墙，允许 WSL2 与 Docker 跨网访问
+  startup_args: "--bind 0.0.0.0 --port 15721"
+
+  # 守护进程防御性编程：开启幂等异步控制，崩溃秒级原地复活
+  daemon_enabled: true
+  retry_backoff_seconds: 3
+
+paths:
+  log_root: "E:\\OpenClaw_Genesis\\logs"
+  # 挂载你的长期记忆冷库路径（单一事实源）
+  obsidian_vault: "E:\\My_AI_Vault"

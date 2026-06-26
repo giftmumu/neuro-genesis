@@ -1,0 +1,17 @@
+# 1. 修正后的容器内部绝对路径
+FROM /root/.ollama/qwen_old.gguf
+
+PARAMETER num_ctx 4096
+PARAMETER stop "<|im_end|>"
+PARAMETER stop "<|im_start|>"
+
+TEMPLATE """{{ if .System }}<|im_start|>system
+{{ .System }}<|im_end|>
+{{ end }}{{ if .Prompt }}<|im_start|>user
+{{ .Prompt }}<|im_end|>
+{{ end }}<|im_start|>assistant
+{{ .Output }}<|im_end|>"""
+
+SYSTEM """You are a highly capable AI assistant integrated with OpenClaw Genesis. 
+When the user or system requests tool execution, you must strictly format your response using standard tool call schemas. 
+Always respond concisely and maintain perfect json structures."""

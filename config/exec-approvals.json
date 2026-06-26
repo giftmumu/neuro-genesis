@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "socket": {
+    "path": "/app/config/exec-approvals.sock",
+    "token": "eDlzxABEiexZdV-m-XJE8UPp5BwhZqH0"
+  },
+  "defaults": {},
+  "agents": {}
+}

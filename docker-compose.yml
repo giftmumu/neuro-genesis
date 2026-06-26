@@ -1,22 +1,170 @@
-version: '3.8'
+# =====================================================================
+# NEURO-GENESIS 基础设施层标准化协议 (v9.0 平台工程级全解耦算力发现网格)
+# =====================================================================
+
+x-common-hosts: &common-hosts
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+
+# 🌟 极致美学：业务服务全量挂载代理出口，确保存量组件无感进化
+x-proxy-env: &proxy-env
+  HTTP_PROXY: "http://docker.internal:80"
+  HTTPS_PROXY: "http://docker.internal:80"
+  http_proxy: "http://docker.internal:80"
+  https_proxy: "http://docker.internal:80"
+  NO_PROXY: "localhost,127.0.0.1,0.0.0.0,openclaw-gateway,openclaw-frontend,emotion-engine,visual-server,ollama,prometheus,grafana,.local,.internal,neuro-net,host.docker.internal"
+
 services:
-  openclaw:
+
+  # 🛡️ NETWORK GUARDIAN: 核心网络自举内核 (零代理依赖、多模态自愈、动态算力发现)
+  network-guardian:
+    image: alpine:3.20
+    container_name: network-guardian
+    restart: unless-stopped
+    <<: *common-hosts
+    # 🌟 斩断衔灭死锁：完全剥离全局代理污染，确保容器在完全清净的真实网域下 100% 自举成功
+    environment:
+      - HTTP_PROXY=""
+      - HTTPS_PROXY=""
+      - http_proxy=""
+      - https_proxy=""
+    networks:
+      neuro-net:
+        aliases:
+          - docker.internal
+    # 🌟 工业级四层纯净存活探针：只检测本地 80 端口的 TCP 活性，绝不绑架外网，在极端断网下提供最高内网鲁棒性！
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 80 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 45s
+    # 🌟 平台工程级防御性控制脚本：配置即事件、动态发现、自动降级
+    command: |
+      sh -c '
+        set -e
+        echo "[BOOTSTRAP] Initializing autonomous L4/L7 mesh network..."
+        until apk add --no-cache privoxy curl iputils; do 
+          echo "[RETRY] Package registry unreachable, backing off..."; sleep 3; 
+        done
+        
+        # 灌入幂等基础策略事实源
+        echo "listen-address 0.0.0.0:80" > /etc/privoxy/config
+        echo "toggle 1" >> /etc/privoxy/config
+        echo "enable-remote-toggle 0" >> /etc/privoxy/config
+        echo "enable-remote-http-toggle 0" >> /etc/privoxy/config
+        echo "enable-edit-actions 0" >> /etc/privoxy/config
+        echo "forward / ." >> /etc/privoxy/config
+        privoxy --no-daemon /etc/privoxy/config &
+        
+        set +e
+        CURRENT_PORT=0
+        while true; do
+          TARGET_PORT=0
+          
+          # 🔍 核心防御性动态发现：自动按照优先级扫描宿主机存活的算力或梯子通道（15721, 4386 为套利网关；7890, 10809 为 Clash）
+          # 它不在乎谁是谁，只要四层通畅且七层能响应，立刻将其捕获为当前集群的“总自来水厂”
+          for PORT in 15721 4386 7890 10809 7893 2334; do
+            if nc -z -w 1 host.docker.internal $$PORT > /dev/null 2>&1; then
+              if curl -s -I --connect-timeout 2 "http://docker.internal:$$PORT" > /dev/null 2>&1; then
+                TARGET_PORT=$$PORT
+                break
+              fi
+            fi
+          done
+
+          # 🔄 拓扑状态机幂等动态变更
+          if [ $$TARGET_PORT -ne $$CURRENT_PORT ]; then
+            echo "[SHIFT] Upstream portal shifted from $$CURRENT_PORT to $$TARGET_PORT. Re-wiring ambient mesh..."
+            sed -i "/forward /d" /etc/privoxy/config
+            
+            if [ $$TARGET_PORT -ne 0 ]; then
+              echo "forward / host.docker.internal:$$TARGET_PORT" >> /etc/privoxy/config
+              echo "[SUCCESS] Dynamic mesh attached to active port $$TARGET_PORT"
+            else
+              echo "forward / ." >> /etc/privoxy/config
+              echo "[FALLBACK] Clean Direct Mode Activated. Infrastructure Secured."
+            fi
+            
+            # 原子级退避：2秒安全缓冲，确保内核套接字端口 100% 腾退干净，防止进程内讧假死
+            pkill -F /var/run/privoxy.pid || pkill privoxy || true
+            sleep 2
+            privoxy --no-daemon /etc/privoxy/config &
+            CURRENT_PORT=$$TARGET_PORT
+          fi
+          
+          sleep 15
+        done
+      '
+
+  # 🌟 [分布式解耦层 - 核心API网关]
+  openclaw-gateway:
     image: ghcr.io/giftmumu/openclaw:stable
-    container_name: openclaw
+    container_name: openclaw-gateway
     restart: unless-stopped
     ports:
       - "18789:18789"
+    volumes:
+      - ./config:/app/config
+      - /mnt/f/OpenClaw_Memory/logs:/app/logs
+    environment:
+      <<: *proxy-env
+      NODE_ENV: production
+      OPENCLAW_MODE: gateway
+      OPENCLAW_STATE_DIR: /app/config
+      OPENCLAW_GATEWAY_TOKEN: bypass
+      OPENCLAW_GATEWAY_PASSWORD: bypass
+      # 🌟 极致纯净的声明式解耦：
+      # 代码和逻辑层面写死官方标准 HTTPS 路径，完全不知道任何私有代理、任何 cc-switch 端口的存在。
+      # 底层的网络自愈内核会在它流量出门的一瞬间，无感将其拉入算力套利流或干净直连防护线！
+      OPENCLAW_LLM_ENDPOINT: "https://anthropic.com"
+    <<: *common-hosts
+    networks:
+      neuro-net:
+        aliases:
+          - openclaw-gateway
+    depends_on:
+      network-guardian:
+        condition: service_healthy
+
+  # 🌟 [分布式解耦层 - 前端WEB管理面板]
+  openclaw-frontend:
+    image: ghcr.io/giftmumu/openclaw:stable
+    container_name: openclaw-frontend
+    restart: unless-stopped
+    command: |
+      sh -c '
+        if [ -f "openclaw.mjs" ]; then
+          node openclaw.mjs dashboard || node openclaw.mjs web || node openclaw.mjs;
+        else
+          npm run start:web || npm run start:dashboard || npm run start;
+        fi
+      '
+    ports:
       - "3000:3000"
     volumes:
       - ./config:/app/config
       - /mnt/f/OpenClaw_Memory/logs:/app/logs
     environment:
-      - NODE_ENV=production
-      - OPENCLAW_MODE=local
-      - TZ=Asia/Shanghai
+      <<: *proxy-env
+      NODE_ENV: production
+      OPENCLAW_MODE: dashboard
+      OPENCLAW_GATEWAY_URL: http://openclaw-gateway:18789
+      OPENCLAW_STATE_DIR: /app/config
+      OPENCLAW_GATEWAY_TOKEN: bypass
+      OPENCLAW_GATEWAY_PASSWORD: bypass
+    <<: *common-hosts
     networks:
-      - neuro-net
+      neuro-net:
+        aliases:
+          - openclaw-frontend
+    depends_on:
+      network-guardian:
+        condition: service_healthy
+      openclaw-gateway:
+        condition: service_started
 
+  # ========== 存量业务微服务层 (资产完美保留) ==========
   emotion-engine:
     image: ghcr.io/giftmumu/emotion-engine:stable
     container_name: emotion-engine
@@ -26,52 +174,82 @@ services:
     volumes:
       - /mnt/f/OpenClaw_Memory/models/bert:/root/.cache/huggingface
     environment:
-      - VISUAL_URL=http://visual-server:8080
+      <<: *proxy-env
+      VISUAL_URL: http://visual-server:8080
+    <<: *common-hosts
     networks:
-      - neuro-net
+      neuro-net: {}
+    depends_on:
+      network-guardian:
+        condition: service_healthy
 
   visual-server:
-    image: ghcr.io/giftmumu/node--22-bookworm
+    image: ghcr.io/giftmumu/node--22-bookworm:latest
     container_name: visual-server
     working_dir: /app
-    restart: unless-stopped
     command: sh -c "npm install && node server.js"
     volumes:
       - ./services/visual-server:/app
     ports:
       - "8088:8080"
+    environment:
+      <<: *proxy-env
+    <<: *common-hosts
     networks:
-      - neuro-net
+      neuro-net: {}
+    depends_on:
+      network-guardian:
+        condition: service_healthy
 
   ollama:
-    image: ghcr.io/giftmumu/ollama-ollama--latest
+    image: ghcr.io/giftmumu/ollama-ollama--latest:latest
     container_name: ollama
     restart: unless-stopped
-    volumes:
-      - /mnt/f/OpenClaw_Memory/models/ollama:/root/.ollama
     ports:
       - "11434:11434"
+    volumes:
+      - /mnt/f/OpenClaw_Memory/models/ollama:/root/.ollama
+    environment:
+      <<: *proxy-env
+      OLLAMA_HOST: 0.0.0.0:11434
+    <<: *common-hosts
     networks:
-      - neuro-net
+      neuro-net: {}
+    depends_on:
+      network-guardian:
+        condition: service_healthy
 
   prometheus:
-    image: ghcr.io/giftmumu/prom-prometheus--latest
+    image: ghcr.io/giftmumu/prom-prometheus--latest:latest
     container_name: prometheus
     restart: unless-stopped
     ports:
       - "9090:9090"
+    environment:
+      <<: *proxy-env
+    <<: *common-hosts
     networks:
-      - neuro-net
+      neuro-net: {}
+    depends_on:
+      network-guardian:
+        condition: service_healthy
 
   grafana:
-    image: ghcr.io/giftmumu/grafana-grafana--latest
+    image: ghcr.io/giftmumu/grafana-grafana--latest:latest
     container_name: grafana
     restart: unless-stopped
     ports:
       - "3001:3000"
+    environment:
+      <<: *proxy-env
+    <<: *common-hosts
     networks:
-      - neuro-net
+      neuro-net: {}
+    depends_on:
+      network-guardian:
+        condition: service_healthy
 
 networks:
   neuro-net:
+    name: openclaw_genesis_neuro-net
     driver: bridge

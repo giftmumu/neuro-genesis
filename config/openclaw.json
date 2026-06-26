@@ -1,25 +1,206 @@
 {
-  "gateway": { "port": 18789, "bind": "lan" },
-  "plugins": {
-    "enabled": true,
-    "hooks": {
-      "before_llm_generate": "http://emotion-engine:8001/analyze"
+  "gateway": {
+    "port": 18789,
+    "bind": "auto",
+    "mode": "local"
+  },
+  "skills": {
+    "entries": {
+      "1password": {
+        "enabled": false
+      },
+      "apple-notes": {
+        "enabled": false
+      },
+      "apple-reminders": {
+        "enabled": false
+      },
+      "bear-notes": {
+        "enabled": false
+      },
+      "blogwatcher": {
+        "enabled": false
+      },
+      "blucli": {
+        "enabled": false
+      },
+      "camsnap": {
+        "enabled": false
+      },
+      "clawhub": {
+        "enabled": false
+      },
+      "coding-agent": {
+        "enabled": false
+      },
+      "discord": {
+        "enabled": false
+      },
+      "eightctl": {
+        "enabled": false
+      },
+      "gemini": {
+        "enabled": false
+      },
+      "gh-issues": {
+        "enabled": false
+      },
+      "gifgrep": {
+        "enabled": false
+      },
+      "github": {
+        "enabled": false
+      },
+      "gog": {
+        "enabled": false
+      },
+      "goplaces": {
+        "enabled": false
+      },
+      "himalaya": {
+        "enabled": false
+      },
+      "imsg": {
+        "enabled": false
+      },
+      "mcporter": {
+        "enabled": false
+      },
+      "model-usage": {
+        "enabled": false
+      },
+      "nano-pdf": {
+        "enabled": false
+      },
+      "obsidian": {
+        "enabled": false
+      },
+      "openai-whisper": {
+        "enabled": false
+      },
+      "openai-whisper-api": {
+        "enabled": false
+      },
+      "openhue": {
+        "enabled": false
+      },
+      "oracle": {
+        "enabled": false
+      },
+      "ordercli": {
+        "enabled": false
+      },
+      "peekaboo": {
+        "enabled": false
+      },
+      "sag": {
+        "enabled": false
+      },
+      "session-logs": {
+        "enabled": false
+      },
+      "sherpa-onnx-tts": {
+        "enabled": false
+      },
+      "slack": {
+        "enabled": false
+      },
+      "songsee": {
+        "enabled": false
+      },
+      "sonoscli": {
+        "enabled": false
+      },
+      "spotify-player": {
+        "enabled": false
+      },
+      "summarize": {
+        "enabled": false
+      },
+      "things-mac": {
+        "enabled": false
+      },
+      "tmux": {
+        "enabled": false
+      },
+      "trello": {
+        "enabled": false
+      },
+      "video-frames": {
+        "enabled": false
+      },
+      "voice-call": {
+        "enabled": false
+      },
+      "wacli": {
+        "enabled": false
+      },
+      "xurl": {
+        "enabled": false
+      }
     }
   },
+  "wizard": {
+    "lastRunAt": "2026-06-13T08:23:05.238Z",
+    "lastRunVersion": "2026.6.2",
+    "lastRunCommand": "doctor",
+    "lastRunMode": "local"
+  },
+  "meta": {
+    "lastTouchedVersion": "2026.6.2",
+    "lastTouchedAt": "2026-06-25T16:22:44.479Z"
+  },
   "models": {
-    "default_provider": "minimax",
     "providers": {
-      "minimax": {
-        "baseUrl": "https://api.minimax.io/anthropic",
-        "apiKey": "${MINIMAX_API_KEY}",
-        "api": "anthropic-messages",
+      "ollama": {
+        "baseUrl": "http://127.0.0.1:11434",
+        "apiKey": "ollama-local",
+        "api": "ollama",
         "models": [
-          { "id": "MiniMax-M27", "name": "MiniMax M2.7" }
+          {
+            "id": "qwen:7b-chat-q4_0",
+            "name": "Qwen 7B Chat (Local)",
+            "contextWindow": 99999,
+            "maxTokens": 2048
+          }
+        ]
+      },
+      "openai": {
+        "baseUrl": "http://127.0.0.1:15721/v1",
+        "apiKey": "sk-dummy-proxy-routed",
+        "api": "openai-completions",
+        "models": [
+          {
+            "id": "deepseek-v4-flash",
+            "name": "DeepSeek V4 Flash",
+            "contextWindow": 1000000,
+            "maxTokens": 16384
+          },
+          {
+            "id": "deepseek-v4-pro",
+            "name": "DeepSeek V4 Pro",
+            "contextWindow": 1000000,
+            "maxTokens": 32768
+          }
         ]
       }
     }
   },
-  "memory": {
-    "provider": "in_memory"
-  }
+  "agents": {
+    "defaults": {
+      "bootstrapMaxChars": 20000,
+      "bootstrapTotalMaxChars": 150000,
+      "contextInjection": "always",
+      "model": {
+        "primary": "openai/deepseek-v4-flash",
+        "fallbacks": [
+          "ollama/qwen:7b-chat-q4_0"
+        ]
+      }
+    }
+  },
+  "tools": {
+    "profile": "minimal"
+  },
+  "auth": {}
 }

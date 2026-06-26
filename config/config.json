@@ -1,0 +1,45 @@
+{
+  "gateway": {
+    "port": 18789,
+    "bind": "lan",
+    "mode": "local"
+  },
+  "web": {
+    "port": 3000,
+    "bind": "lan"
+  },
+  "plugins": {
+    "enabled": true,
+    "hooks": {
+      "before_llm_generate": "http://emotion-engine:8001/analyze"
+    }
+  },
+  "models": {
+    "default_provider": "ollama",
+    "providers": {
+      "ollama": {
+        "baseUrl": "http://ollama:11434",
+        "models": [
+          { "id": "qwen:7b-chat-q4_0", "name": "Qwen 7B (本地回环)" }
+        ]
+      },
+      "minimax": {
+        "baseUrl": "https://minimax.io",
+        "apiKey": "暂未配置",
+        "models": [
+          { "id": "MiniMax-M27", "name": "MiniMax M2.7" }
+        ]
+      },
+      "openai": {
+        "baseUrl": "https://openai.com",
+        "apiKey": "暂未配置",
+        "models": [
+          { "id": "gpt-4o", "name": "GPT-4o" }
+        ]
+      }
+    }
+  },
+  "memory": {
+    "provider": "in_memory"
+  }
+}
