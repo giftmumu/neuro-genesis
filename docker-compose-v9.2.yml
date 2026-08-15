@@ -141,13 +141,15 @@ services:
   #     host 网络模式让容器共享 WSL2 网络栈，127.0.0.1 直连 CC-Switch
   #   不在 HTTP_PROXY 链中 — LLM API 请求直接发给 CC-Switch，不走 Privoxy
   openclaw-gateway:
-    image: ghcr.io/giftmumu/openclaw:stable
+    image: mumuren/openclaw:stable
     container_name: openclaw-gateway
     restart: unless-stopped
     network_mode: "host"
+    user: "1000:1000"
     volumes:
-      - ./config:/app/config
-      - /mnt/f/OpenClaw_Memory/logs:/app/logs
+      - /home/tutu/OpenClaw_Genesis/config:/app/config
+      - /home/tutu/OpenClaw_Genesis/workspace:/home/node/.openclaw/workspace
+      - /home/tutu/OpenClaw_Genesis/logs:/app/logs
     environment:
       # 不设 HTTP_PROXY — 直连 CC-Switch，不需要经过 Privoxy 透明代理
       NODE_ENV: production
@@ -155,13 +157,39 @@ services:
       OPENCLAW_STATE_DIR: /app/config
       OPENCLAW_GATEWAY_TOKEN: bypass
       OPENCLAW_GATEWAY_PASSWORD: bypass
-
+  # ===== Hermes Agent (独立意志承载) =====
+  # 使用 host 网络直连 CC-Switch (127.0.0.1:15721) 和 双相网关 (127.0.0.1:4386)
+  # 无需经过 Privoxy 代理，零性能损耗。
+  hermes-agent:
+    image: mumuren/hermes-agent:latest
+    container_name: hermes-agent
+    restart: unless-stopped
+    command: ["sleep", "infinity"]
+    network_mode: "host"
+  # user: "1000:1000"
+    volumes:
+      - /home/tutu/OpenClaw_Genesis/hermes/data:/opt/data
+      - /home/tutu/OpenClaw_Genesis/hermes/config:/opt/hermes/conf-backup:ro
+      - /home/tutu/.agent_memory:/app/agent_memory:ro   # 共享记忆只读挂载
+      - /mnt:/mnt   # Windows 盘挂载 (C/D/E/F)，让 hermes 可访问宿主机文件
+    environment:
+      HERMES_BASE_URL: "http://127.0.0.1:4386"
+      HERMES_API_KEY: "sk-ant-ccswitch-proxy-routed"
+      LOG_LEVEL: "info"
+      HERMES_UID: "1000"          # 新增
+      HERMES_GID: "1000"          # 新增
+      HERMES_DASHBOARD: "1"
+      HERMES_DASHBOARD_HOST: "127.0.0.1"
+      HERMES_DASHBOARD_PORT: "9119"
+      HERMES_DASHBOARD_BASIC_AUTH_USERNAME: "admin"
+      HERMES_DASHBOARD_BASIC_AUTH_PASSWORD: "H3rmes@Dashboard"
 
   # ========== 存量业务微服务层 (资产完美保留) ==========
   emotion-engine:
     image: ghcr.io/giftmumu/emotion-engine:stable
     container_name: emotion-engine
     restart: unless-stopped
+    user: "1000:1000"
     ports:
       - "8001:8001"
     volumes:
@@ -180,6 +208,7 @@ services:
     image: ghcr.io/giftmumu/visual-server:stable
     container_name: visual-server
     restart: unless-stopped
+    user: "1000:1000"
     ports:
       - "8088:8080"
     environment:
@@ -213,6 +242,9 @@ services:
     image: ghcr.io/giftmumu/prom-prometheus--latest:latest
     container_name: prometheus
     restart: unless-stopped
+    user: "1000:1000"
+    volumes:
+      - prometheus-data:/prometheus
     ports:
       - "9090:9090"
     environment:
@@ -228,6 +260,7 @@ services:
     image: ghcr.io/giftmumu/grafana-grafana--latest:latest
     container_name: grafana
     restart: unless-stopped
+    user: "1000:1000"
     ports:
       - "3001:3000"
     environment:
@@ -243,3 +276,6 @@ networks:
   neuro-net:
     name: openclaw_genesis_neuro-net
     driver: bridge
+
+volumes:
+  prometheus-data:

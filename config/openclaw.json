@@ -28,7 +28,7 @@
         "enabled": false
       },
       "clawhub": {
-        "enabled": false
+        "enabled": true
       },
       "coding-agent": {
         "enabled": false
@@ -130,10 +130,10 @@
         "enabled": false
       },
       "voice-call": {
-        "enabled": false
+        "enabled": true
       },
       "wacli": {
-        "enabled": false
+        "enabled": true
       },
       "xurl": {
         "enabled": false
@@ -141,14 +141,16 @@
     }
   },
   "wizard": {
-    "lastRunAt": "2026-06-13T08:23:05.238Z",
-    "lastRunVersion": "2026.6.2",
+    "lastRunAt": "2026-08-14T19:47:51.941Z",
+    "lastRunVersion": "2026.8.1",
     "lastRunCommand": "doctor",
     "lastRunMode": "local"
   },
   "meta": {
-    "lastTouchedVersion": "2026.6.2",
-    "lastTouchedAt": "2026-06-25T16:22:44.479Z"
+    "lastTouchedVersion": "2026.8.1",
+    "migrations": {
+      "modelPolicyAllowlist": true
+    }
   },
   "models": {
     "providers": {
@@ -161,13 +163,16 @@
             "id": "qwen:7b-chat-q4_0",
             "name": "Qwen 7B Chat (Local)",
             "contextWindow": 99999,
-            "maxTokens": 2048
+            "maxTokens": 2048,
+            "params": {
+              "num_ctx": 99999
+            }
           }
         ]
       },
       "openai": {
-        "baseUrl": "http://127.0.0.1:15721/v1",
-        "apiKey": "sk-dummy-proxy-routed",
+        "baseUrl": "http://127.0.0.1:4386/v1",
+        "apiKey": "sk-ant-ccswitch-proxy-routed",
         "api": "openai-completions",
         "models": [
           {
@@ -183,6 +188,25 @@
             "maxTokens": 32768
           }
         ]
+      },
+      "stepfun": {
+        "baseUrl": "http://127.0.0.1:4386/v1",
+        "apiKey": "sk-ant-ccswitch-proxy-routed",
+        "api": "openai-completions",
+        "models": [
+          {
+            "id": "step-3.7-flash",
+            "name": "Step 3.7 Flash",
+            "contextWindow": 262144,
+            "maxTokens": 16384
+          },
+          {
+            "id": "step-3.5-flash",
+            "name": "Step 3.5 Flash",
+            "contextWindow": 262144,
+            "maxTokens": 8192
+          }
+        ]
       }
     }
   },
@@ -192,15 +216,60 @@
       "bootstrapTotalMaxChars": 150000,
       "contextInjection": "always",
       "model": {
-        "primary": "openai/deepseek-v4-flash",
+        "primary": "stepfun/step-3.7-flash",
         "fallbacks": [
           "ollama/qwen:7b-chat-q4_0"
         ]
       }
+    },
+    "entries": {
+      "main": {}
     }
   },
   "tools": {
-    "profile": "minimal"
+    "profile": "coding"
   },
-  "auth": {}
+  "plugins": {
+    "entries": {
+      "workboard": {
+        "enabled": true,
+        "config": {}
+      },
+      "memory-core": {
+        "config": {}
+      },
+      "stepfun": {
+        "enabled": true
+      },
+      "ollama": {
+        "enabled": true
+      },
+      "spotify": {
+        "enabled": true
+      }
+    }
+  },
+  "auth": {},
+  "mcp": {
+    "servers": {
+      "neuro-genesis": {
+        "command": "python3",
+        "args": [
+          "-u",
+          "/home/node/.agent_memory/neuro_genesis_mcp.py"
+        ],
+        "env": {
+          "PYTHONUNBUFFERED": "1"
+        }
+      },
+      "hugging-face": {
+        "url": "https://huggingface.co/mcp",
+        "transport": "streamable-http"
+      },
+      "deepwiki": {
+        "url": "https://mcp.deepwiki.com/mcp",
+        "transport": "streamable-http"
+      }
+    }
+  }
 }
