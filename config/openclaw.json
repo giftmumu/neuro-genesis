@@ -220,6 +220,15 @@
         "fallbacks": [
           "ollama/qwen:7b-chat-q4_0"
         ]
+      },
+      "modelPolicy": {
+        "allow": [
+          "openai/deepseek-v4-flash",
+          "openai/deepseek-v4-pro",
+          "ollama/qwen:7b-chat-q4_0",
+          "stepfun/step-3.7-flash",
+          "stepfun/step-3.5-flash"
+        ]
       }
     },
     "entries": {
