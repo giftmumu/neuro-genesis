@@ -23,10 +23,10 @@
 # =====================================================================
 
 x-common-hosts: &common-hosts
-  # extra_hosts intentionally removed.
-  # Docker Desktop for Windows provides built-in host.docker.internal DNS
-  # that correctly resolves to the Windows host.
-  # Overriding with host-gateway breaks CC-Switch / Clash port access.
+  # Docker Engine(非Desktop)不提供 host.docker.internal 解析 → 必须用 host-gateway 显式映射
+  # (2026-08-16 实测根因: 之前无此映射,bridge容器全解析不了host,network-guardian动态发现失效)
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
   dns: []
 
 # 极致美学：业务服务全量挂载代理出口，确保存量组件无感进化
