@@ -216,7 +216,7 @@
       "bootstrapTotalMaxChars": 150000,
       "contextInjection": "always",
       "model": {
-        "primary": "stepfun/step-3.7-flash",
+        "primary": "openai/deepseek-v4-flash",
         "fallbacks": [
           "ollama/qwen:7b-chat-q4_0"
         ]
