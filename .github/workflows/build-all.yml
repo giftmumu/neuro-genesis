@@ -68,8 +68,10 @@ jobs:
           cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/build-cache:emotion-engine,mode=max
 
       # 2026-08-16: GHCR 构建产物无损复制到 Docker Hub（免重构建）
+      # continue-on-error: Docker Hub 推送失败不应阻断 GHCR 主流程
       - name: Mirror emotion-engine to Docker Hub
         if: env.DOCKERHUB_ENABLED == 'true'
+        continue-on-error: true
         run: |
           docker buildx imagetools create \
             --tag "${{ secrets.DOCKERHUB_USERNAME }}/emotion-engine:${{ env.VERSION_TAG }}" \
