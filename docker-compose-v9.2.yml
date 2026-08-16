@@ -150,6 +150,9 @@ services:
       - /home/tutu/OpenClaw_Genesis/config:/app/config
       - /home/tutu/OpenClaw_Genesis/workspace:/home/node/.openclaw/workspace
       - /home/tutu/OpenClaw_Genesis/logs:/app/logs
+      # 共享记忆挂载: 让 neuro-genesis MCP server 可用 (neuro_genesis_mcp.py + db.py + neuro_genesis.db)
+      # 用 rw 因为 MCP 的 init_db 需要 PRAGMA journal_mode=WAL (写); 符合架构"agent 认知写入义务"
+      - /home/tutu/.agent_memory:/home/node/.agent_memory
     environment:
       # 不设 HTTP_PROXY — 直连 CC-Switch，不需要经过 Privoxy 透明代理
       NODE_ENV: production
