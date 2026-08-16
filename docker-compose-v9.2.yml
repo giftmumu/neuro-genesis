@@ -192,14 +192,18 @@ services:
     image: ghcr.io/giftmumu/emotion-engine:stable
     container_name: emotion-engine
     restart: unless-stopped
-    user: "1000:1000"
+    # 2026-08-16 修复：去掉 user 1000:1000 —— uid 1000 时 HOME=/ 导致 torch.compile
+    #   mega-cache 崩溃；模型缓存是只读推理，root 运行无写入风险
     ports:
       - "8001:8001"
-    volumes:
-      - /mnt/f/OpenClaw_Memory/models/bert:/root/.cache/huggingface
     environment:
       <<: *proxy-env
       VISUAL_URL: http://visual-server:8080
+      # 2026-08-16: 模型已烘焙进镜像（/app/models + HF_HOME 由镜像 ENV 内置），
+      #   不再挂载 /mnt/f、不再覆盖 HF_HOME → 冷启动完全可移植
+      #   离线模式保留作纵深防御（transformers 5.11 缺 chat_template 时会联网）
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
     <<: *common-hosts
     networks:
       neuro-net: {}
